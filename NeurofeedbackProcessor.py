@@ -48,7 +48,7 @@ class NeurofeedbackProcessor:
         self.is_collecting_baseline = False
         self.is_processing = False
         self.channel_index = 2  # Default to CH3 (index 2)
-        self.active_hand = "right"  # Default hand
+        self.active_limb = "right"  # Default hand
         
         # Smoothing variables for visual feedback
         self.smoothed_erd_mu = 0
@@ -68,17 +68,17 @@ class NeurofeedbackProcessor:
         self.process_times = deque(maxlen=100)  # Store processing times
         self.last_process_time = time.time()
         
-    def set_active_hand(self, hand):
-        """Set the active hand for the current trial."""
-        self.active_hand = hand
+    def set_active_limb(self, limb):
+        """Set the active limb for the current trial."""
+        self.active_limb = limb
         # Use contralateral hemisphere: left hand -> right hemisphere (CH6), right hand -> left hemisphere (CH3)
-        if hand == "no_movement":
+        if limb == "no_movement":
             # For no-movement trials, use both channels or a default channel
             self.channel_index = 2  # Default to CH3 (can be modified as needed)
             logging.info(f"No movement trial, using channel {EEG_CHANNELS[self.channel_index]} for baseline")
         else:
-            self.channel_index = 5 if hand == "left" else 3 if hand == "feet" else 2  # CH6 (index 5) or CH3 (index 2)
-            logging.info(f"Active hand set to {hand}, using channel {EEG_CHANNELS[self.channel_index]}")
+            self.channel_index = 5 if limb == "left" else 3 if limb == "feet" else 2  # CH6 (index 5) or CH3 (index 2)
+            logging.info(f"Active limb set to {limb}, using channel {EEG_CHANNELS[self.channel_index]}")
         
     def start_initial_baseline_collection(self):
         """Start collecting data for initial baseline calculation."""

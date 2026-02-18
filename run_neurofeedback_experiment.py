@@ -157,7 +157,7 @@ def run_neurofeedback_experiment(neurofeedback_processor):
 
     # Generate randomized trial list with both hands
     import math
-    base_trials = (["right", "left", "feet"] * math.ceil(NUM_TRIALS / 3))[:NUM_TRIALS]
+    base_trials = (["right_arm", "left_arm", "feet"] * math.ceil(NUM_TRIALS / 3))[:NUM_TRIALS]
     
     # Add no-movement trials based on probability
     final_trials = []
@@ -206,17 +206,17 @@ def run_neurofeedback_experiment(neurofeedback_processor):
     core.wait(2.0)
 
     # Main experiment loop
-    for trial_num, hand in enumerate(final_trials, 1):
-        # Set the active hand for this trial (or handle no-movement)
-        if hand != "no_movement":
-            neurofeedback_processor.set_active_hand(hand)
+    for trial_num, limb in enumerate(final_trials, 1):
+        # Set the active limb for this trial (or handle no-movement)
+        if limb != "no_movement":
+            neurofeedback_processor.set_active_limb(limb)
             
             # Update the channel indicator # Get rid of this 
-            if hand=="right":
+            if limb=="right_arm":
                 channel_used="CH3"
-            elif hand == "left":
+            elif limb == "left_arm":
                 channel_used  ="CH6"
-            elif hand=="feet":
+            elif limb=="feet":
                 channel_used="CH4"
             channel_text.text = f"Using {channel_used} (Contralateral Hemisphere)"
         else:
@@ -229,11 +229,11 @@ def run_neurofeedback_experiment(neurofeedback_processor):
         win.flip()
         core.wait(1.0)
         
-        # Show instruction (right hand, left hand, or no movement)
-        if hand == "no_movement":
+        # Show instruction (right limb, left limb, or no movement)
+        if limb == "no_movement":
             instruction_text.text = "NO MOVEMENT"
         else:
-            instruction_text.text = f"{hand.upper()} HAND"
+            instruction_text.text = f"{limb.upper()} LIMB"
         
         instruction_text.draw()
         channel_text.draw()
@@ -266,12 +266,12 @@ def run_neurofeedback_experiment(neurofeedback_processor):
         instruction_text.draw()
         channel_text.draw()
         # Schedule marker to be sent on next flip
-        if hand == "no_movement":
+        if limb == "no_movement":
             marker_val = MARKER_NO_MOVEMENT
         else:
-           if hand == "right":
+           if limb == "right_arm":
             marker_val = MARKER_RIGHT
-           elif  hand == "left":
+           elif  limb == "left_arm":
              marker_val = MARKER_LEFT
            else:
             marker_val = MARKER_FEET 
@@ -369,10 +369,10 @@ def run_neurofeedback_experiment(neurofeedback_processor):
                 win.frameIntervals = []  # Reset for next trial
         
         # Log completion with appropriate description
-        if hand == "no_movement":
+        if limb == "no_movement":
             logging.info(f"Completed trial {trial_num}/{len(final_trials)}: no movement")
         else:
-            logging.info(f"Completed trial {trial_num}/{len(final_trials)}: {hand} hand")
+            logging.info(f"Completed trial {trial_num}/{len(final_trials)}: {limb} limb")
         
         # Check for quit
         if event.getKeys(keyList=["escape"]):
