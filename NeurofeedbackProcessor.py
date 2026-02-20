@@ -197,7 +197,10 @@ class NeurofeedbackProcessor:
             Calculated ERD values (0 if not enough data or not processing)
         """
         start_time = time.time()
-        channel_data = eeg_sample[self.channel_index]
+        if self.use_bilateral:
+            channel_data = (eeg_sample[self.channel_indices[0]] + eeg_sample[self.channel_indices[1]]) / 2
+        else:
+            channel_data = eeg_sample[self.channel_index]
         
         # Store sample in appropriate buffer
         if self.is_collecting_initial_baseline:
