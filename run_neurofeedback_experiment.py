@@ -217,7 +217,7 @@ def run_neurofeedback_experiment(neurofeedback_processor):
             elif limb == "left_arm":
                 channel_used  ="CH6"
             elif limb=="feet":
-                channel_used="CH4"
+                channel_used="CH3 and CH6"
             channel_text.text = f"Using {channel_used} (Contralateral Hemisphere)"
         else:
             # For no-movement trials, display both channels
@@ -273,7 +273,7 @@ def run_neurofeedback_experiment(neurofeedback_processor):
             marker_val = MARKER_RIGHT
            elif  limb == "left_arm":
              marker_val = MARKER_LEFT
-           else:
+           elif limb == "feet":
             marker_val = MARKER_FEET 
         win.callOnFlip(lambda m=marker_val: marker_outlet.push_sample([m]))
         win.flip()
