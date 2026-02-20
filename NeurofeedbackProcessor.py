@@ -48,7 +48,7 @@ class NeurofeedbackProcessor:
         self.is_collecting_baseline = False
         self.is_processing = False
         self.channel_index = 2  # Default to CH3 (index 2)
-        self.active_limb = "right"  # Default hand
+        self.active_limb = "right_arm"  # Default limb
         
         # Smoothing variables for visual feedback
         self.smoothed_erd_mu = 0
@@ -77,7 +77,12 @@ class NeurofeedbackProcessor:
             self.channel_index = 2  # Default to CH3 (can be modified as needed)
             logging.info(f"No movement trial, using channel {EEG_CHANNELS[self.channel_index]} for baseline")
         else:
-            self.channel_index = 5 if limb == "left" else 3 if limb == "feet" else 2  # CH6 (index 5) or CH3 (index 2)
+            if limb=="left_arm":
+                self.channel_index = 5  # CH6 (index 5)
+            elif limb=="right_arm":
+                self.channel_index = 2  # CH3 (index 2)
+            elif limb=="feet":
+                self.channel_index = 2 and 5  # CH3 (index 2) - default to CH3 for feet
             logging.info(f"Active limb set to {limb}, using channel {EEG_CHANNELS[self.channel_index]}")
         
     def start_initial_baseline_collection(self):
