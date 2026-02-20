@@ -73,17 +73,21 @@ class NeurofeedbackProcessor:
         self.active_limb = limb
         # Use contralateral hemisphere: left hand -> right hemisphere (CH6), right hand -> left hemisphere (CH3)
         if limb == "no_movement":
-            # For no-movement trials, use both channels or a default channel
-            self.channel_index = 2  # Default to CH3 (can be modified as needed)
-            logging.info(f"No movement trial, using channel {EEG_CHANNELS[self.channel_index]} for baseline")
-        else:
-            if limb=="left_arm":
-                self.channel_index = 5  # CH6 (index 5)
-            elif limb=="right_arm":
-                self.channel_index = 2  # CH3 (index 2)
-            elif limb=="feet":
-                self.channel_index = 2 and 5  # CH3 (index 2) - default to CH3 for feet
+            self.channel_index = 2  # Default to CH3
+            self.use_bilateral = False
+            logging.info(f"No movement trial, using channel {EEG_CHANNELS[self.channel_index]}")
+        elif limb == "left_arm":
+            self.channel_index = 5  # CH6 (index 5)
+            self.use_bilateral = False
             logging.info(f"Active limb set to {limb}, using channel {EEG_CHANNELS[self.channel_index]}")
+        elif limb == "right_arm":
+            self.channel_index = 2  # CH3 (index 2)
+            self.use_bilateral = False
+            logging.info(f"Active limb set to {limb}, using channel {EEG_CHANNELS[self.channel_index]}")
+        elif limb == "feet":
+            self.channel_indices = [2, 5]  # Both CH3 and CH6
+            self.use_bilateral = True
+            logging.info(f"Active limb set to {limb}, using bilateral channels {[EEG_CHANNELS[i] for i in self.channel_indices]}")
         
     def start_initial_baseline_collection(self):
         """Start collecting data for initial baseline calculation."""
