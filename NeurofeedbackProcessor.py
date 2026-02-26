@@ -49,6 +49,7 @@ class NeurofeedbackProcessor:
         self.is_processing = False
         self.channel_index = 2  # Default to CH3 (index 2)
         self.active_limb = "right_arm"  # Default limb
+        self.use_bilateral = False
         
         # Smoothing variables for visual feedback
         self.smoothed_erd_mu = 0
