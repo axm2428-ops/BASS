@@ -47,9 +47,9 @@ class NeurofeedbackProcessor:
         self.max_observed_erd_beta = MAX_INITIAL_ERD  # Same for beta
         self.is_collecting_baseline = False
         self.is_processing = False
-        self.channel_index = 2  # Default to CH3 (index 2)
+        self.channel_indices = [2]  # Default to CH3 (index 2)
         self.active_limb = "right_arm"  # Default limb
-        self.use_bilateral = False
+        self.use_bilateral = False  # Whether to use bilateral channels (for feet)
         
         # Smoothing variables for visual feedback
         self.smoothed_erd_mu = 0
@@ -74,22 +74,26 @@ class NeurofeedbackProcessor:
         self.active_limb = limb
         # Use contralateral hemisphere: left hand -> right hemisphere (CH6), right hand -> left hemisphere (CH3)
         if limb == "no_movement":
-            self.channel_index = 2  # Default to CH3
+            self.channel_indices = [2]  # Default to CH3
             self.use_bilateral = False
-            logging.info(f"No movement trial, using channel {EEG_CHANNELS[self.channel_index]}")
+            logging.info(f"No movement trial, using channel {EEG_CHANNELS[self.channel_indices[0]]}")
         elif limb == "left_arm":
-            self.channel_index = 5  # CH6 (index 5)
+            self.channel_indices = [5]  # CH6 (index 5)
             self.use_bilateral = False
-            logging.info(f"Active limb set to {limb}, using channel {EEG_CHANNELS[self.channel_index]}")
+            logging.info(f"Active limb set to {limb}, using channel {EEG_CHANNELS[self.channel_indices[0]]}")
         elif limb == "right_arm":
-            self.channel_index = 2  # CH3 (index 2)
+            self.channel_indices = [2]  # CH3 (index 2)
             self.use_bilateral = False
-            logging.info(f"Active limb set to {limb}, using channel {EEG_CHANNELS[self.channel_index]}")
+            logging.info(f"Active limb set to {limb}, using channel {EEG_CHANNELS[self.channel_indices[0]]}")
         elif limb == "feet":
-            self.channel_indices = [2, 5]  # Both CH3 and CH6
             self.use_bilateral = True
+            self.channel_indices = [2, 5]  # Both CH3 and CH6
             logging.info(f"Active limb set to {limb}, using bilateral channels {[EEG_CHANNELS[i] for i in self.channel_indices]}")
-        
+        else:
+            logging.warning(f"Unknown limb '{limb}', defaulting to right arm (CH3)")
+            self.channel_indices = [2]
+            self.use_bilateral = False    
+
     def start_initial_baseline_collection(self):
         """Start collecting data for initial baseline calculation."""
         self.initial_baseline_count = 0
@@ -199,10 +203,18 @@ class NeurofeedbackProcessor:
         """
         start_time = time.time()
         if self.use_bilateral:
-            channel_data = (eeg_sample[self.channel_indices[0]] + eeg_sample[self.channel_indices[1]]) / 2
+            if len(self.channel_indices) == 2:
+                channel_data = (eeg_sample[self.channel_indices[0]] + eeg_sample[self.channel_indices[1]]) / 2
+            else:
+                logging.warning(
+                    f"channel_indices {self.channel_indices} unexpected, "
+                    "using first element only"
+                )
+                channel_data = eeg_sample[self.channel_indices[0]]
+
         else:
-            channel_data = eeg_sample[self.channel_index]
-        
+            channel_data = eeg_sample[self.channel_indices[0]]
+
         # Store sample in appropriate buffer
         if self.is_collecting_initial_baseline:
             if self.initial_baseline_count < len(self.initial_baseline_buffer):
@@ -217,6 +229,10 @@ class NeurofeedbackProcessor:
             return 0, 0
             
         if self.is_processing:
+
+
+
+
             # Update the circular buffer
             if self.window_count < self.window_size:
                 # Still filling the buffer
@@ -273,7 +289,7 @@ class NeurofeedbackProcessor:
                 emphasized_mu = normalized_mu ** (1/ERD_EMPHASIS_FACTOR)  # Power < 1 emphasizes higher values
                 emphasized_beta = normalized_beta ** (1/ERD_EMPHASIS_FACTOR)
                 
-                # Smooth the values for display
+                # Apply smoothing for visual feedback
                 self.smoothed_erd_mu = (SMOOTHING_FACTOR * self.smoothed_erd_mu + 
                                      (1-SMOOTHING_FACTOR) * emphasized_mu)
                 self.smoothed_erd_beta = (SMOOTHING_FACTOR * self.smoothed_erd_beta + 
@@ -306,3 +322,4 @@ class NeurofeedbackProcessor:
     def get_smoothed_erd_beta(self):
         """Return the smoothed beta ERD value for visual feedback."""
         return self.smoothed_erd_beta
+    
