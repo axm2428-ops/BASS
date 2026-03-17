@@ -108,11 +108,10 @@ from run_neurofeedback_experiment import run_neurofeedback_experiment
 #                             BIDS CONVERSION
 ###############################################################################
 def convert_to_bids(csv_path):
-    ''''
+    """
     This function is given to you.
     It converts the CSV data to BIDS (Brain Imaging Data Structure) format.
-    Scroll down to code Main!!!!!!!
-    '''
+    """
     logging.info(f"Converting {csv_path} to BIDS...")
     import pandas as pd
     try:
@@ -207,23 +206,7 @@ def main():
             convert_to_bids(collector.output_csv)
         except Exception:
             logging.exception("BIDS conversion failed")
-        logging.info("P300 experiment finished with LSL data.")
-
-
-    
-    '''
-
-   
-    It should have the following parameters:
-        - self: the instance of the class
-    The function should start a threading.Event object.
-    The function should create an instance of the LSLDataCollector class.
-    The function should start the data collector thread.
-    The function should run the experiment (stimulus presentation).
-    The function should stop the collector thread gracefully.
-    The function should convert the CSV data to BIDS format.
-    The function should log that the P300 experiment has finished.
-    '''
+        logging.info("Motor imagery experiment finished with LSL data.")
 
 if __name__ == "__main__":
     main()
