@@ -26,7 +26,7 @@ MARKER_RIGHT = "1"  # right hand imagery
 MARKER_LEFT = "2"   # left hand imagery
 MARKER_FEET = "3"   # feet imagery
 MARKER_STOP = "END"   # end of imagery period
-MARKER_NO_MOVEMENT = "0"  # no movement/rest trials
+MARKER_NO_MOVEMENT = "rest"  # no movement/rest trials
 
 # File/directories
 RAW_DATA_DIR = "data/raw"
