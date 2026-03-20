@@ -133,25 +133,26 @@ def convert_to_bids(csv_path):
         data_eeg.append(col_data)
     data_eeg = np.array(data_eeg)  # shape: (n_channels, n_samples)
 
-    # Process markers
+    # Process markers and trial_id
     raw_markers = df["marker"].astype(str).replace({"nan": "", "None": ""}).values
+    trial_ids = df["trial_id"].astype(str).values if "trial_id" in df.columns else ["0"] * len(df)
     markers = []
-    for i, m in enumerate(raw_markers):
+    for i, (m, t) in enumerate(zip(raw_markers, trial_ids)):
         if m != "":
-            markers.append((i, m))
+            markers.append((i, m, t))
 
     from mne import create_info
     from mne.io import RawArray
     info = create_info(ch_names=EEG_CHANNELS, sfreq=SAMPLE_RATE, ch_types="eeg")
     raw = RawArray(data_eeg, info)
 
-    # Create annotations from markers
+    # Create annotations from markers with trial_id
     annotations_onset = []
     annotations_desc  = []
-    for (idx, marker_val) in markers:
+    for (idx, marker_val, trial_id) in markers:
         onset_sec = idx / SAMPLE_RATE  # Alternatively, use LSL timestamps if available
         annotations_onset.append(onset_sec)
-        annotations_desc.append(f"Marker/{marker_val}")
+        annotations_desc.append(f"Marker/{marker_val}/trial_{trial_id}")
 
     import mne
     raw.set_annotations(mne.Annotations(
