@@ -182,13 +182,23 @@ def convert_to_bids(csv_path):
         logging.exception("Error during BIDS conversion:")
 
 def main():
+    # Create marker stream BEFORE starting collector
+    from pylsl import StreamInfo, StreamOutlet
+    try:
+        marker_info = StreamInfo(MARKER_STREAM_NAME, "Markers", 1, 0, "string", "marker_id")
+        marker_outlet = StreamOutlet(marker_info)
+        logging.info("Marker stream created.")
+    except Exception as e:
+        logging.exception("Failed to create LSL Marker stream:")
+        sys.exit(1)
+
     stop_event = threading.Event()
     collector = LSLDataCollector(stop_event, neurofeedback_processor)
     collector.start()
 
     try:
         # run with real marker outlet (collector will resolve streams)
-        run_neurofeedback_experiment(neurofeedback_processor)
+        run_neurofeedback_experiment(neurofeedback_processor, marker_outlet)
     except KeyboardInterrupt:
         logging.info("KeyboardInterrupt received during experiment. Stopping...")
         stop_event.set()
