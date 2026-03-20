@@ -30,6 +30,7 @@ class LSLDataCollector(threading.Thread):
         self.neurofeedback_processor = neurofeedback_processor
         self.eeg_buffer = deque()
         self.marker_buffer = deque()
+        self.trial_id = 0
         timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         # Ensure data directory exists before creating files
@@ -73,25 +74,43 @@ class LSLDataCollector(threading.Thread):
                 ts_eeg, eeg_data = self.eeg_buffer[0]
                 ts_marker, marker = self.marker_buffer[0]
                 if abs(ts_marker - ts_eeg) < MERGE_THRESHOLD:
-                    row = [ts_eeg] + eeg_data + [marker]
+                    if marker and marker != "":
+                        try:
+                            if float(marker) != 0:
+                                self.trial_id += 1
+                        except (ValueError, TypeError):
+                            pass
+                    row = [ts_eeg] + eeg_data + [marker, self.trial_id]
                     writer.writerow(row)
                     self.eeg_buffer.popleft()
                     self.marker_buffer.popleft()
                 elif ts_marker < ts_eeg:
-                    row = [ts_marker] + ([""] * len(eeg_data)) + [marker]
+                    if marker and marker != "":
+                        try:
+                            if float(marker) != 0:
+                                self.trial_id += 1
+                        except (ValueError, TypeError):
+                            pass
+                    row = [ts_marker] + ([""] * len(eeg_data)) + [marker, self.trial_id]
                     writer.writerow(row)
                     self.marker_buffer.popleft()
                 else:
-                    row = [ts_eeg] + eeg_data + [""]
+                    row = [ts_eeg] + eeg_data + ["", self.trial_id]
                     writer.writerow(row)
                     self.eeg_buffer.popleft()
             elif self.eeg_buffer:
                 ts_eeg, eeg_data = self.eeg_buffer.popleft()
-                row = [ts_eeg] + eeg_data + [""]
+                row = [ts_eeg] + eeg_data + ["", self.trial_id]
                 writer.writerow(row)
             elif self.marker_buffer:
                 ts_marker, marker = self.marker_buffer.popleft()
-                row = [ts_marker] + ([""] * len(EEG_CHANNELS)) + [marker]
+                if marker and marker != "":
+                    try:
+                        if float(marker) != 0:
+                            self.trial_id += 1
+                    except (ValueError, TypeError):
+                        pass
+                row = [ts_marker] + ([""] * len(EEG_CHANNELS)) + [marker, self.trial_id]
                 writer.writerow(row)
 
     def run(self):
@@ -100,7 +119,7 @@ class LSLDataCollector(threading.Thread):
         try:
             with open(self.output_csv, mode="w", newline="") as f:
                 writer = csv.writer(f)
-                header = ["lsl_timestamp"] + EEG_CHANNELS + ["marker"]
+                header = ["lsl_timestamp"] + EEG_CHANNELS + ["marker", "trial_id"]
                 writer.writerow(header)
                 while not self.stop_event.is_set():
                     try:
@@ -138,16 +157,28 @@ class LSLDataCollector(threading.Thread):
                         ts_eeg, eeg_data = self.eeg_buffer[0]
                         ts_marker, marker = self.marker_buffer[0]
                         if abs(ts_marker - ts_eeg) < MERGE_THRESHOLD:
-                            row = [ts_eeg] + eeg_data + [marker]
+                            if marker and marker != "":
+                                try:
+                                    if float(marker) != 0:
+                                        self.trial_id += 1
+                                except (ValueError, TypeError):
+                                    pass
+                            row = [ts_eeg] + eeg_data + [marker, self.trial_id]
                             writer.writerow(row)
                             self.eeg_buffer.popleft()
                             self.marker_buffer.popleft()
                         elif ts_marker < ts_eeg:
-                            row = [ts_marker] + ([""] * len(eeg_data)) + [marker]
+                            if marker and marker != "":
+                                try:
+                                    if float(marker) != 0:
+                                        self.trial_id += 1
+                                except (ValueError, TypeError):
+                                    pass
+                            row = [ts_marker] + ([""] * len(eeg_data)) + [marker, self.trial_id]
                             writer.writerow(row)
                             self.marker_buffer.popleft()
                         else:
-                            row = [ts_eeg] + eeg_data + [""]
+                            row = [ts_eeg] + eeg_data + ["", self.trial_id]
                             writer.writerow(row)
                             self.eeg_buffer.popleft()
                     
@@ -155,7 +186,7 @@ class LSLDataCollector(threading.Thread):
                     if len(self.eeg_buffer) > 1000:
                         while len(self.eeg_buffer) > 500:
                             ts_eeg, eeg_data = self.eeg_buffer.popleft()
-                            row = [ts_eeg] + eeg_data + [""]
+                            row = [ts_eeg] + eeg_data + ["", self.trial_id]
                             writer.writerow(row)
                             
                     time.sleep(POLL_SLEEP)
