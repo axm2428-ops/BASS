@@ -28,7 +28,7 @@ from config import (
 )
 
 
-def run_neurofeedback_experiment(neurofeedback_processor):
+def run_neurofeedback_experiment(neurofeedback_processor, marker_outlet):
     """
     Run the neurofeedback experiment with visualizations using PsychoPy.
     
@@ -37,16 +37,9 @@ def run_neurofeedback_experiment(neurofeedback_processor):
     -----------
     neurofeedback_processor : NeurofeedbackProcessor
         The processor instance that handles EEG signal processing
+    marker_outlet : pylsl.StreamOutlet
+        The LSL marker outlet for sending experiment markers
     """
-    from pylsl import StreamInfo, StreamOutlet
-    # Create LSL Marker stream
-    try:
-        marker_info = StreamInfo(MARKER_STREAM_NAME, "Markers", 1, 0, "string", "marker_id")
-        marker_outlet = StreamOutlet(marker_info)
-        logging.info("Marker stream created.")
-    except Exception as e:
-        logging.exception("Failed to create LSL Marker stream:")
-        sys.exit(1)
 
     # PsychoPy setup
     try:
