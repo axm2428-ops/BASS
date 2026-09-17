@@ -6,6 +6,7 @@ import time
 import sys
 from datetime import datetime
 from collections import deque
+from pylsl import resolve_byprop, StreamInlet
 
 from config import (
     EEG_STREAM_NAME,
@@ -13,9 +14,13 @@ from config import (
     EEG_CHANNELS,
     MERGE_THRESHOLD,
     POLL_SLEEP,
-    RAW_DATA_DIR,  
- 
-    
+    RAW_DATA_DIR,
+    MARKER_RIGHT,
+    MARKER_LEFT,
+    MARKER_FEET,
+    MARKER_NO_MOVEMENT,
+    MARKER_STOP
+
 )
 
 
@@ -28,9 +33,10 @@ class LSLDataCollector(threading.Thread):
         self.daemon = True  # Make thread a daemon so it exits when main program does
         self.stop_event = stop_event
         self.neurofeedback_processor = neurofeedback_processor
+        self.ready_event = threading.Event()
+        self.startup_error = None
         self.eeg_buffer = deque()
         self.marker_buffer = deque()
-        self.trial_id = 0
         timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         # Ensure data directory exists before creating files
@@ -44,82 +50,81 @@ class LSLDataCollector(threading.Thread):
         self.neurofeedback_queue = deque(maxlen=5)  # Small buffer to prevent overflow
 
     def resolve_streams(self):
+        """Resolve EEG and Marker LSL streams with detailed logging."""
         try:
-            logging.info("Resolving EEG LSL stream...")
+            logging.info(f"Resolving EEG LSL stream (name='{EEG_STREAM_NAME}', timeout=10s)...")
             from pylsl import resolve_byprop, StreamInlet
             eeg_streams = resolve_byprop("name", EEG_STREAM_NAME, timeout=10)
             if not eeg_streams:
-                logging.error(f"No EEG stream found with name '{EEG_STREAM_NAME}'. Exiting.")
-                sys.exit(1)
+                error_msg = (f"No EEG stream found with name '{EEG_STREAM_NAME}' after 10s timeout. "
+                           f"Verify that the EEG data source (BrainVision/synthetic stream) is running.")
+                logging.error(error_msg)
+                raise RuntimeError(error_msg)
+            
             self.eeg_inlet = StreamInlet(eeg_streams[0], max_buflen=360)
             self.clock_offset = self.eeg_inlet.time_correction()
-            logging.info(f"Computed clock offset: {self.clock_offset:.6f} seconds")
+            logging.info(f"✓ EEG stream resolved. Clock offset: {self.clock_offset:.6f}s")
 
-            logging.info("Resolving Marker LSL stream...")
+            logging.info(f"Resolving Marker LSL stream (name='{MARKER_STREAM_NAME}', timeout=10s)...")
             marker_streams = resolve_byprop("name", MARKER_STREAM_NAME, timeout=10)
             if not marker_streams:
-                logging.error(f"No Marker stream found with name '{MARKER_STREAM_NAME}'. Exiting.")
+                error_msg = (f"No Marker stream found with name '{MARKER_STREAM_NAME}' after 10s timeout. "
+                           f"Verify that the marker stream outlet is still active in the main process.")
+                logging.error(error_msg)
                 sys.exit(1)
+
+           
             self.marker_inlet = StreamInlet(marker_streams[0], max_buflen=360)
 
-            logging.info("LSL streams resolved. Starting data collection...")
+            logging.info(f"✓ Marker stream resolved.")
+            logging.info("✓ LSL streams ready. Starting data collection...")
         except Exception as e:
-            logging.exception("Exception during stream resolution:")
+            logging.exception("Failed to resolve LSL streams:")
             sys.exit(1)
+       
 
     def flush_remaining(self, writer):
         """Flush any remaining buffered data to the CSV."""
+        # Define valid trial markers (not including STOP)
+        valid_trial_markers = {MARKER_RIGHT, MARKER_LEFT, MARKER_FEET, MARKER_NO_MOVEMENT}
+        
         while self.eeg_buffer or self.marker_buffer:
             if self.eeg_buffer and self.marker_buffer:
                 ts_eeg, eeg_data = self.eeg_buffer[0]
                 ts_marker, marker = self.marker_buffer[0]
                 if abs(ts_marker - ts_eeg) < MERGE_THRESHOLD:
-                    if marker and marker != "":
-                        try:
-                            if float(marker) != 0:
-                                self.trial_id += 1
-                        except (ValueError, TypeError):
-                            pass
-                    row = [ts_eeg] + eeg_data + [marker, self.trial_id]
+            
+                    row = [ts_eeg] + eeg_data + [marker]
                     writer.writerow(row)
                     self.eeg_buffer.popleft()
                     self.marker_buffer.popleft()
                 elif ts_marker < ts_eeg:
-                    if marker and marker != "":
-                        try:
-                            if float(marker) != 0:
-                                self.trial_id += 1
-                        except (ValueError, TypeError):
-                            pass
-                    row = [ts_marker] + ([""] * len(eeg_data)) + [marker, self.trial_id]
+                    row = [ts_marker] + ([""] * len(eeg_data)) + [marker]
+        
                     writer.writerow(row)
                     self.marker_buffer.popleft()
                 else:
-                    row = [ts_eeg] + eeg_data + ["", self.trial_id]
+                    row = [ts_eeg] + eeg_data + [""]
                     writer.writerow(row)
                     self.eeg_buffer.popleft()
             elif self.eeg_buffer:
                 ts_eeg, eeg_data = self.eeg_buffer.popleft()
-                row = [ts_eeg] + eeg_data + ["", self.trial_id]
+                row = [ts_eeg] + eeg_data + [""]
                 writer.writerow(row)
             elif self.marker_buffer:
                 ts_marker, marker = self.marker_buffer.popleft()
-                if marker and marker != "":
-                    try:
-                        if float(marker) != 0:
-                            self.trial_id += 1
-                    except (ValueError, TypeError):
-                        pass
-                row = [ts_marker] + ([""] * len(EEG_CHANNELS)) + [marker, self.trial_id]
+                row = [ts_marker] + ([""] * len(EEG_CHANNELS)) + [marker]
                 writer.writerow(row)
 
     def run(self):
         from pylsl import resolve_byprop, StreamInlet
         self.resolve_streams()
+     
+    
         try:
             with open(self.output_csv, mode="w", newline="") as f:
                 writer = csv.writer(f)
-                header = ["lsl_timestamp"] + EEG_CHANNELS + ["marker", "trial_id"]
+                header = ["lsl_timestamp"] + EEG_CHANNELS + ["marker"]
                 writer.writerow(header)
                 while not self.stop_event.is_set():
                     try:
@@ -147,8 +152,18 @@ class LSLDataCollector(threading.Thread):
                         sample_marker, ts_marker = self.marker_inlet.pull_sample(timeout=0.0)
                         if sample_marker is not None and ts_marker is not None:
                             adjusted_ts_marker = ts_marker - self.clock_offset
-                            marker_val = sample_marker[0]
-                            self.marker_buffer.append((adjusted_ts_marker, marker_val))
+                            marker_val = sample_marker[0] 
+                            valid_markers = {
+                                MARKER_RIGHT,
+                                MARKER_LEFT,
+                                MARKER_FEET,
+                                MARKER_NO_MOVEMENT,
+                                MARKER_STOP,
+                            }
+                            if marker_val in valid_markers:
+                                self.marker_buffer.append((adjusted_ts_marker, marker_val))
+                            else:
+                                logging.warning(f"Ignoring unknown marker value: {marker_val!r}")
                     except Exception as e:
                         pass
 
@@ -157,28 +172,16 @@ class LSLDataCollector(threading.Thread):
                         ts_eeg, eeg_data = self.eeg_buffer[0]
                         ts_marker, marker = self.marker_buffer[0]
                         if abs(ts_marker - ts_eeg) < MERGE_THRESHOLD:
-                            if marker and marker != "":
-                                try:
-                                    if float(marker) != 0:
-                                        self.trial_id += 1
-                                except (ValueError, TypeError):
-                                    pass
-                            row = [ts_eeg] + eeg_data + [marker, self.trial_id]
+                            row = [ts_eeg] + eeg_data + [marker]
                             writer.writerow(row)
                             self.eeg_buffer.popleft()
                             self.marker_buffer.popleft()
                         elif ts_marker < ts_eeg:
-                            if marker and marker != "":
-                                try:
-                                    if float(marker) != 0:
-                                        self.trial_id += 1
-                                except (ValueError, TypeError):
-                                    pass
-                            row = [ts_marker] + ([""] * len(eeg_data)) + [marker, self.trial_id]
+                            row = [ts_marker] + ([""] * len(eeg_data)) + [marker]
                             writer.writerow(row)
                             self.marker_buffer.popleft()
                         else:
-                            row = [ts_eeg] + eeg_data + ["", self.trial_id]
+                            row = [ts_eeg] + eeg_data + [""]
                             writer.writerow(row)
                             self.eeg_buffer.popleft()
                     
@@ -186,7 +189,7 @@ class LSLDataCollector(threading.Thread):
                     if len(self.eeg_buffer) > 1000:
                         while len(self.eeg_buffer) > 500:
                             ts_eeg, eeg_data = self.eeg_buffer.popleft()
-                            row = [ts_eeg] + eeg_data + ["", self.trial_id]
+                            row = [ts_eeg] + eeg_data + [""]
                             writer.writerow(row)
                             
                     time.sleep(POLL_SLEEP)
