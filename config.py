@@ -15,7 +15,7 @@ SAMPLE_RATE = 250  # Hz
 EEG_CHANNELS = ["CH1", "CH2", "CH3", "CH4", "CH5", "CH6", "CH7", "CH8"]
 
 # Motor Imagery Experiment Parameters
-NUM_TRIALS = 40  # Configurable number of trials
+NUM_TRIALS = 30  # Configurable number of trials
 INSTRUCTION_DURATION = 2.0  # seconds to show left/right instruction
 IMAGERY_DURATION = 5.0  # seconds for motor imagery
 INTER_TRIAL_INTERVAL = 3.0  # seconds between trials
@@ -28,7 +28,7 @@ MARKER_FEET = "3"   # feet imagery
 MARKER_STOP = "END"   # end of imagery period
 MARKER_NO_MOVEMENT = "rest"  # no movement/rest trials
 
-# File/directories
+# File/directorie
 RAW_DATA_DIR = "data/raw"
 os.makedirs(RAW_DATA_DIR, exist_ok=True)
 
