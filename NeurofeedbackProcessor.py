@@ -89,11 +89,8 @@ class NeurofeedbackProcessor:
             self.use_bilateral = True
             self.channel_indices = [2, 5]  # Both CH3 and CH6
             logging.info(f"Active limb set to {limb}, using bilateral channels {[EEG_CHANNELS[i] for i in self.channel_indices]}")
-        else:
-            logging.warning(f"Unknown limb '{limb}', defaulting to right arm (CH3)")
-            self.channel_indices = [2]
-            self.use_bilateral = False    
 
+        
     def start_initial_baseline_collection(self):
         """Start collecting data for initial baseline calculation."""
         self.initial_baseline_count = 0
