@@ -21,7 +21,10 @@ from fft_power_update import fft_power_update
 from bandpass_filter import bandpass_filter
 #import neurofeedback processor
 from NeurofeedbackProcessor import NeurofeedbackProcessor
-neurofeedback_processor= NeurofeedbackProcessor()
+from run_neurofeedback_experiment import run_neurofeedback_experiment
+# Import lsl data collector class
+from LSLDataCollector import LSLDataCollector
+
 
 
 # Configure logging: timestamped, INFO level
@@ -82,26 +85,6 @@ except Exception:
     TASK_NAME = "mi"
     RUN_ID = "run-01"
     BIDS_ROOT = "bids_dataset"
-
-
-
-# Import lsl data collector class
-from LSLDataCollector import LSLDataCollector
-
-
-
-
-
-
-
-# import run_neurofeedback_experiment
-from run_neurofeedback_experiment import run_neurofeedback_experiment
-
-
-
-
-
-
 
 
 ###############################################################################
@@ -183,41 +166,86 @@ def convert_to_bids(csv_path):
         logging.exception("Error during BIDS conversion:")
 
 def main():
-    # Create marker stream BEFORE starting collector
-    from pylsl import StreamInfo, StreamOutlet
-    try:
-        marker_info = StreamInfo(MARKER_STREAM_NAME, "Markers", 1, 0, "string", "marker_id")
-        marker_outlet = StreamOutlet(marker_info)
-        logging.info("Marker stream created.")
-    except Exception as e:
-        logging.exception("Failed to create LSL Marker stream:")
-        sys.exit(1)
 
+
+    logging.info("="*70)
+    logging.info("Starting Motor Imagery Neurofeedback Experiment")
+    logging.info("="*70)
+
+    #import neurofeedback processor
+    neurofeedback_processor = NeurofeedbackProcessor()
+
+    #start data collector
     stop_event = threading.Event()
     collector = LSLDataCollector(stop_event, neurofeedback_processor)
     collector.start()
+    # Create marker stream BEFORE starting collector
+    
 
-    try:
-        # run with real marker outlet (collector will resolve streams)
-        run_neurofeedback_experiment(neurofeedback_processor, marker_outlet)
-    except KeyboardInterrupt:
-        logging.info("KeyboardInterrupt received during experiment. Stopping...")
-        stop_event.set()
-    except Exception:
-        logging.exception("Experiment error:")
-        stop_event.set()
-    finally:
+   # run experiment
+    run_neurofeedback_experiment(neurofeedback_processor)
+
+
+    logging.info("Experiment complete. Stopping data collector thread...")
+    stop_event.set()
+    collector.join(timeout=2.0)  # Wait max 2 seconds for clean shutdown
+
+    logging.info("All processes complete. Exiting script.")
+
+
+
+
+
+    
+    #try:
+        # Start the data collector thread
+       # logging.info("Starting LSL data collector thread...")
+      #  collector.start()
+       # logging.info("✓ Data collector started")
+
+        
+        
+        # Wait until the collector has resolved both EEG and marker streams.
+        #if not collector.ready_event.wait(timeout=15):
+            #raise RuntimeError("Timed out waiting for the LSL collector to become ready")
+       # if collector.startup_error is not None:
+           # raise RuntimeError("LSL collector failed to start") from collector.startup_error
+        
+        # Run using the same marker outlet created above.
+        #logging.info("Launching neurofeedback experiment...")
+        #run_neurofeedback_experiment(neurofeedback_processor, marker_outlet)
+       # logging.info("✓ Experiment completed successfully")
+        
+    # except KeyboardInterrupt:
+       # logging.info("KeyboardInterrupt received during experiment. Stopping...")
+       # stop_event.set()
+    #exit_code = 130
+    #except Exception as e:
+       # logging.exception("Experiment error - details above:")
+       # stop_event.set()
+       # exit_code = 1
+    #finally:
         # ensure collector stops and join with a timeout
-        stop_event.set()
-        collector.join(timeout=5.0)
-        if collector.is_alive():
-            logging.warning("Collector thread failed to stop within 5s")
+        #logging.info("Shutting down data collector...")
+        #stop_event.set()
+        #collector.join(timeout=5.0)
+        #if collector.is_alive():
+            #logging.warning("Collector thread failed to stop within 5s - may lose final data")
+        
         # Convert to BIDS if we have an output
-        try:
-            convert_to_bids(collector.output_csv)
-        except Exception:
-            logging.exception("BIDS conversion failed")
-        logging.info("Motor imagery experiment finished with LSL data.")
+        #logging.info(f"Attempting BIDS conversion for {collector.output_csv}...")
+        #try:
+         #   convert_to_bids(collector.output_csv)
+       # except Exception:
+        #    logging.exception("BIDS conversion failed")
+        
+        #logging.info("="*70)
+        #logging.info("Motor imagery experiment finished with LSL data.")
+        #logging.info(f"Data saved to: {collector.output_csv}")
+       # logging.info("="*70)
+
+    #if exit_code != 0:
+        #raise SystemExit(exit_code)
 
 if __name__ == "__main__":
     main()
