@@ -1,10 +1,12 @@
 import logging
 import random
 import sys
+import time
 import numpy as np
 from psychopy import visual, core, event
 
 from config import (
+
     BASELINE_END,
     BASELINE_START,
     EEG_STREAM_NAME,
@@ -28,7 +30,7 @@ from config import (
 )
 
 
-def run_neurofeedback_experiment(neurofeedback_processor, marker_outlet):
+def run_neurofeedback_experiment(neurofeedback_processor):
     """
     Run the neurofeedback experiment with visualizations using PsychoPy.
     
@@ -40,9 +42,23 @@ def run_neurofeedback_experiment(neurofeedback_processor, marker_outlet):
     marker_outlet : pylsl.StreamOutlet
         The LSL marker outlet for sending experiment markers
     """
+    logging.info("\n" + "="*70)
+    logging.info("NEUROFEEDBACK EXPERIMENT STARTING")
+    logging.info(f"Neurofeedback Processor: {type(neurofeedback_processor).__name__}")
+
+    from pylsl import StreamInfo, StreamOutlet
+    # Create LSL Marker stream
+    try:
+        marker_info = StreamInfo(MARKER_STREAM_NAME, "Markers", 1, 0, "string", "marker_id")
+        marker_outlet = StreamOutlet(marker_info)
+        logging.info("Marker stream created.")
+    except Exception as e:
+        logging.exception("Failed to create LSL Marker stream:")
+        sys.exit(1)
 
     # PsychoPy setup
     try:
+        logging.info("Initializing PsychoPy window...")
         from psychopy import visual, core, event, clock
         
         # Set up monitor for optimal performance
@@ -56,10 +72,10 @@ def run_neurofeedback_experiment(neurofeedback_processor, marker_outlet):
         )
         win.recordFrameIntervals = True  # Track frame timing
         
-        logging.info("PsychoPy window created.")
+        logging.info("✓ PsychoPy window created successfully (1024x768, windowed mode)")
     except Exception as e:
-        logging.exception("Error setting up PsychoPy window:")
-        sys.exit(1)
+        logging.exception("ERROR: Failed to initialize PsychoPy window. Is a display connected?")
+        raise
 
     # Create visual stimuli
     instruction_text = visual.TextStim(win, text="", height=0.15, color="white")
@@ -150,7 +166,7 @@ def run_neurofeedback_experiment(neurofeedback_processor, marker_outlet):
 
     # Generate randomized trial list with both hands
     import math
-    base_trials = (["right_arm", "left_arm", "feet"] * math.ceil(NUM_TRIALS / 3))[:NUM_TRIALS]
+    base_trials = ["right_arm", "left_arm", "feet"] * (NUM_TRIALS // 3)
     
     # Add no-movement trials based on probability
     final_trials = []
@@ -164,14 +180,17 @@ def run_neurofeedback_experiment(neurofeedback_processor, marker_outlet):
     random.shuffle(final_trials)
     
     # Show initial instructions
+    logging.info("Displaying initial instructions...")
     instruction_text.text = "Motor Imagery Neurofeedback\n\nImagine moving your hand when instructed\n\nDo not move when 'NO MOVEMENT' is shown\n\nThe feedback bars will show your brain activity\n\nPress SPACE to begin"
     instruction_text.draw()
     win.flip()
     event.waitKeys(keyList=["space"])
+    logging.info("User confirmed - starting baseline collection")
     
     # Initial 10-second baseline collection
     instruction_text.text = "Collecting baseline\n\nPlease relax and remain still"
     neurofeedback_processor.start_initial_baseline_collection()
+    logging.info(f"Starting initial baseline collection ({INITIAL_BASELINE_DURATION}s)...")
     
     baseline_clock = core.Clock()
     baseline_clock.reset()
@@ -188,15 +207,18 @@ def run_neurofeedback_experiment(neurofeedback_processor, marker_outlet):
         if event.getKeys(keyList=["escape"]):
             win.close()
             neurofeedback_processor.stop_initial_baseline_collection()
+            logging.info("User cancelled during baseline")
             return
     
     neurofeedback_processor.stop_initial_baseline_collection()
+    logging.info("✓ Initial baseline collection completed")
     
     # Indicate baseline completion
     instruction_text.text = "Baseline Completed\n\nThe experiment will begin shortly"
     instruction_text.draw()
     win.flip()
     core.wait(2.0)
+    logging.info(f"Beginning {len(final_trials)} trials...")
 
     # Define channel display text mapping (reused for all trials)
     channel_display = {
@@ -264,7 +286,7 @@ def run_neurofeedback_experiment(neurofeedback_processor, marker_outlet):
         # Stop baseline collection and prepare for processing
         neurofeedback_processor.stop_baseline_collection()
         
-        # Show START cue and send marker
+        # Show START cue and send start marker
         instruction_text.text = "START"
         instruction_text.draw()
         channel_text.draw()
@@ -272,6 +294,9 @@ def run_neurofeedback_experiment(neurofeedback_processor, marker_outlet):
         marker_val = marker_map[limb]
         win.callOnFlip(lambda m=marker_val: marker_outlet.push_sample([m]))
         win.flip()
+        # Brief delay to allow LSL to transmit marker (10ms typical for LSL transport)
+        time.sleep(0.01)
+        logging.debug(f"Sent START marker: {marker_val} for {limb}")
         
         # Start real-time processing after the START cue
         neurofeedback_processor.start_processing()
@@ -348,6 +373,9 @@ def run_neurofeedback_experiment(neurofeedback_processor, marker_outlet):
         channel_text.draw()
         win.callOnFlip(lambda s=MARKER_STOP: marker_outlet.push_sample([s]))
         win.flip()
+        # Brief delay to allow LSL to transmit marker (10ms typical for LSL transport)
+        time.sleep(0.01)
+        logging.debug(f"Sent STOP marker")
         core.wait(1.0)
         
         # Inter-trial interval
@@ -375,4 +403,6 @@ def run_neurofeedback_experiment(neurofeedback_processor, marker_outlet):
 
     # Cleanup
     win.close()
-    logging.info("Neurofeedback experiment finished.")
+    logging.info("="*70)
+    logging.info("✓ Neurofeedback experiment finished successfully")
+    logging.info("="*70)
