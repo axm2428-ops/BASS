@@ -12,6 +12,8 @@ from config import (
     EEG_STREAM_NAME,
     MARKER_STREAM_NAME,
     EEG_CHANNELS,
+    CSV_EEG_CHANNEL_INDICES,
+    CSV_EEG_CHANNELS,
     MERGE_THRESHOLD,
     POLL_SLEEP,
     RAW_DATA_DIR,
@@ -28,11 +30,12 @@ class LSLDataCollector(threading.Thread):
     """
     Background thread that collects and synchronizes EEG and marker data.
     """
-    def __init__(self, stop_event, neurofeedback_processor):
+    def __init__(self, stop_event, neurofeedback_processor, marker_source_id=None):
         super().__init__()
         self.daemon = True  # Make thread a daemon so it exits when main program does
         self.stop_event = stop_event
         self.neurofeedback_processor = neurofeedback_processor
+        self.marker_source_id = marker_source_id
         self.ready_event = threading.Event()
         self.startup_error = None
         self.eeg_buffer = deque()
@@ -53,13 +56,15 @@ class LSLDataCollector(threading.Thread):
         """Resolve EEG and Marker LSL streams with detailed logging."""
         try:
             logging.info(f"Resolving EEG LSL stream (name='{EEG_STREAM_NAME}', timeout=10s)...")
-            from pylsl import resolve_byprop, StreamInlet
+            from pylsl import cf_string, resolve_byprop, StreamInlet
             eeg_streams = resolve_byprop("name", EEG_STREAM_NAME, timeout=10)
             if not eeg_streams:
                 error_msg = (f"No EEG stream found with name '{EEG_STREAM_NAME}' after 10s timeout. "
                            f"Verify that the EEG data source (BrainVision/synthetic stream) is running.")
                 logging.error(error_msg)
-                raise RuntimeError(error_msg)
+                self.startup_error = RuntimeError(error_msg)
+                self.ready_event.set()  # Signal main thread even on error
+                return
             
             self.eeg_inlet = StreamInlet(eeg_streams[0], max_buflen=360)
             self.clock_offset = self.eeg_inlet.time_correction()
@@ -71,16 +76,53 @@ class LSLDataCollector(threading.Thread):
                 error_msg = (f"No Marker stream found with name '{MARKER_STREAM_NAME}' after 10s timeout. "
                            f"Verify that the marker stream outlet is still active in the main process.")
                 logging.error(error_msg)
-                sys.exit(1)
+                self.startup_error = RuntimeError(error_msg)
+                self.ready_event.set()  # Signal main thread even on error
+                return
 
-           
-            self.marker_inlet = StreamInlet(marker_streams[0], max_buflen=360)
+            marker_stream = next(
+                (
+                    stream for stream in marker_streams
+                    if stream.channel_format() == cf_string
+                    and stream.channel_count() == 1
+                    and (
+                        self.marker_source_id is None
+                        or stream.source_id() == self.marker_source_id
+                    )
+                ),
+                None,
+            )
+            if marker_stream is None:
+                available_streams = [
+                    {
+                        "source_id": stream.source_id(),
+                        "channel_format": stream.channel_format(),
+                        "channel_count": stream.channel_count(),
+                    }
+                    for stream in marker_streams
+                ]
+                error_msg = (
+                    f"No matching string marker stream found for '{MARKER_STREAM_NAME}'. "
+                    f"Expected source_id={self.marker_source_id!r}, one string channel; "
+                    f"found {available_streams!r}."
+                )
+                logging.error(error_msg)
+                self.startup_error = RuntimeError(error_msg)
+                self.ready_event.set()
+                return
 
-            logging.info(f"✓ Marker stream resolved.")
+            self.marker_inlet = StreamInlet(marker_stream, max_buflen=360)
+
+            logging.info(
+                "Marker stream resolved: source_id=%s format=string channels=1",
+                marker_stream.source_id(),
+            )
             logging.info("✓ LSL streams ready. Starting data collection...")
+            self.ready_event.set()  # Signal that we're ready
         except Exception as e:
             logging.exception("Failed to resolve LSL streams:")
-            sys.exit(1)
+            self.startup_error = e
+            self.ready_event.set()  # Signal main thread even on error
        
 
     def flush_remaining(self, writer):
@@ -94,7 +136,7 @@ class LSLDataCollector(threading.Thread):
                 ts_marker, marker = self.marker_buffer[0]
                 if abs(ts_marker - ts_eeg) < MERGE_THRESHOLD:
             
-                    row = [ts_eeg] + eeg_data + [marker]
+                    row = [ts_eeg] + [eeg_data[i] for i in CSV_EEG_CHANNEL_INDICES] + [marker]
                     writer.writerow(row)
                     self.eeg_buffer.popleft()
                     self.marker_buffer.popleft()
@@ -113,18 +155,23 @@ class LSLDataCollector(threading.Thread):
                 writer.writerow(row)
             elif self.marker_buffer:
                 ts_marker, marker = self.marker_buffer.popleft()
-                row = [ts_marker] + ([""] * len(EEG_CHANNELS)) + [marker]
+                row = [ts_marker] + ([""] * len(CSV_EEG_CHANNELS)) + [marker]
                 writer.writerow(row)
 
     def run(self):
         from pylsl import resolve_byprop, StreamInlet
         self.resolve_streams()
-     
+        if self.startup_error is not None:
+            logging.error(
+                "Data collector could not connect to its LSL streams; "
+                f"no CSV was created. Expected output path: {self.output_csv}"
+            )
+            return
     
         try:
             with open(self.output_csv, mode="w", newline="") as f:
                 writer = csv.writer(f)
-                header = ["lsl_timestamp"] + EEG_CHANNELS + ["marker"]
+                header = ["lsl_timestamp"] + CSV_EEG_CHANNELS + ["marker"]
                 writer.writerow(header)
                 while not self.stop_event.is_set():
                     try:
@@ -172,16 +219,16 @@ class LSLDataCollector(threading.Thread):
                         ts_eeg, eeg_data = self.eeg_buffer[0]
                         ts_marker, marker = self.marker_buffer[0]
                         if abs(ts_marker - ts_eeg) < MERGE_THRESHOLD:
-                            row = [ts_eeg] + eeg_data + [marker]
+                            row = [ts_eeg] + [eeg_data[i] for i in CSV_EEG_CHANNEL_INDICES] + [marker]
                             writer.writerow(row)
                             self.eeg_buffer.popleft()
                             self.marker_buffer.popleft()
                         elif ts_marker < ts_eeg:
-                            row = [ts_marker] + ([""] * len(eeg_data)) + [marker]
+                            row = [ts_marker] + ([""] * len(CSV_EEG_CHANNELS)) + [marker]
                             writer.writerow(row)
                             self.marker_buffer.popleft()
                         else:
-                            row = [ts_eeg] + eeg_data + [""]
+                            row = [ts_eeg] + [eeg_data[i] for i in CSV_EEG_CHANNEL_INDICES] + [""]
                             writer.writerow(row)
                             self.eeg_buffer.popleft()
                     
@@ -189,7 +236,7 @@ class LSLDataCollector(threading.Thread):
                     if len(self.eeg_buffer) > 1000:
                         while len(self.eeg_buffer) > 500:
                             ts_eeg, eeg_data = self.eeg_buffer.popleft()
-                            row = [ts_eeg] + eeg_data + [""]
+                            row = [ts_eeg] + [eeg_data[i] for i in CSV_EEG_CHANNEL_INDICES] + [""]
                             writer.writerow(row)
                             
                     time.sleep(POLL_SLEEP)
@@ -198,4 +245,4 @@ class LSLDataCollector(threading.Thread):
         except Exception as e:
             logging.exception("Exception in data collector run loop:")
         finally:
-            logging.info(f"Data collection stopped. Data saved to {self.output_csv}")
+            logging.info(f"Data collection stopped. CSV path: {self.output_csv}")
