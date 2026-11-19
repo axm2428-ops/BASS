@@ -1,3 +1,16 @@
+"""
+Motor Imagery Neurofeedback Experiment - Main Data Collection Script
+
+IMPORTANT: This script requires an EEG data source (OpenBCI or synthetic).
+Before running this script:
+  1. Start your EEG data source (BrainVision/OpenBCI)
+  2. OR run test_lsl_connections.py to verify connections
+
+To test if marker collection is working:
+  python test_marker_fix.py
+
+See MARKER_FIX_SUMMARY.md for details on the marker collection fix.
+"""
 import threading
 import time
 import random
@@ -9,8 +22,12 @@ from datetime import datetime
 import numpy as np
 import logging
 import argparse
+import uuid
 from scipy.signal import butter, filtfilt
 import sys
+import config
+
+
 sys.path.insert(0, '.')
 
 
@@ -40,6 +57,9 @@ from config import (
     MARKER_STREAM_NAME,
     SAMPLE_RATE,
     EEG_CHANNELS,
+    CSV_EEG_CHANNELS,
+    EEG_STREAM_NAME,
+    MARKER_STREAM_NAME,
     NUM_TRIALS,
     INSTRUCTION_DURATION,
     IMAGERY_DURATION,
@@ -104,14 +124,14 @@ def convert_to_bids(csv_path):
         return
 
     # Verify that expected EEG channel columns exist
-    missing_cols = [ch for ch in EEG_CHANNELS if ch not in df.columns]
+    missing_cols = [ch for ch in CSV_EEG_CHANNELS if ch not in df.columns]
     if missing_cols:
         logging.error(f"CSV is missing expected EEG channels: {missing_cols}")
         return
 
     # Extract EEG data
     data_eeg = []
-    for ch in EEG_CHANNELS:
+    for ch in CSV_EEG_CHANNELS:
         col_data = pd.to_numeric(df[ch], errors="coerce").fillna(0).values
         data_eeg.append(col_data)
     data_eeg = np.array(data_eeg)  # shape: (n_channels, n_samples)
@@ -126,7 +146,7 @@ def convert_to_bids(csv_path):
 
     from mne import create_info
     from mne.io import RawArray
-    info = create_info(ch_names=EEG_CHANNELS, sfreq=SAMPLE_RATE, ch_types="eeg")
+    info = create_info(ch_names=CSV_EEG_CHANNELS, sfreq=SAMPLE_RATE, ch_types="eeg")
     raw = RawArray(data_eeg, info)
 
     # Create annotations from markers with trial_id
@@ -175,15 +195,38 @@ def main():
     #import neurofeedback processor
     neurofeedback_processor = NeurofeedbackProcessor()
 
+    # Create marker stream BEFORE starting collector to avoid race condition
+    from pylsl import StreamInfo, StreamOutlet
+    try:
+        marker_source_id = f"mi-marker-{uuid.uuid4().hex}"
+        marker_info = StreamInfo(
+            MARKER_STREAM_NAME, "Markers", 1, 0, "string", marker_source_id
+        )
+        marker_outlet = StreamOutlet(marker_info)
+        logging.info(f"✓ Marker stream created: '{MARKER_STREAM_NAME}'")
+        # Brief delay to let marker stream stabilize on the network
+        time.sleep(2.0)
+        logging.info("✓ Marker stream stable and ready")
+    except Exception as e:
+        logging.exception("Failed to create LSL Marker stream:")
+        raise
+
     #start data collector
     stop_event = threading.Event()
-    collector = LSLDataCollector(stop_event, neurofeedback_processor)
+    collector = LSLDataCollector(
+        stop_event, neurofeedback_processor, marker_source_id=marker_source_id
+    )
     collector.start()
-    # Create marker stream BEFORE starting collector
     
+    # Wait for collector to be ready (streams resolved)
+    if not collector.ready_event.wait(timeout=15):
+        raise RuntimeError("Timed out waiting for LSL collector to resolve streams")
+    if collector.startup_error is not None:
+        raise RuntimeError("LSL collector failed to start") from collector.startup_error
+    logging.info("✓ Data collector ready and connected")
 
    # run experiment
-    run_neurofeedback_experiment(neurofeedback_processor)
+    run_neurofeedback_experiment(neurofeedback_processor, marker_outlet)
 
 
     logging.info("Experiment complete. Stopping data collector thread...")
