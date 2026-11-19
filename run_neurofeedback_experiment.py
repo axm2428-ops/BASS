@@ -30,7 +30,7 @@ from config import (
 )
 
 
-def run_neurofeedback_experiment(neurofeedback_processor):
+def run_neurofeedback_experiment(neurofeedback_processor, marker_outlet):
     """
     Run the neurofeedback experiment with visualizations using PsychoPy.
     
@@ -40,21 +40,12 @@ def run_neurofeedback_experiment(neurofeedback_processor):
     neurofeedback_processor : NeurofeedbackProcessor
         The processor instance that handles EEG signal processing
     marker_outlet : pylsl.StreamOutlet
-        The LSL marker outlet for sending experiment markers
+        The LSL marker outlet for sending experiment markers (pre-created by main script)
     """
     logging.info("\n" + "="*70)
     logging.info("NEUROFEEDBACK EXPERIMENT STARTING")
     logging.info(f"Neurofeedback Processor: {type(neurofeedback_processor).__name__}")
-
-    from pylsl import StreamInfo, StreamOutlet
-    # Create LSL Marker stream
-    try:
-        marker_info = StreamInfo(MARKER_STREAM_NAME, "Markers", 1, 0, "string", "marker_id")
-        marker_outlet = StreamOutlet(marker_info)
-        logging.info("Marker stream created.")
-    except Exception as e:
-        logging.exception("Failed to create LSL Marker stream:")
-        sys.exit(1)
+    logging.info("✓ Using pre-created marker outlet")
 
     # PsychoPy setup
     try:
@@ -200,6 +191,7 @@ def run_neurofeedback_experiment(neurofeedback_processor):
         remaining = int(INITIAL_BASELINE_DURATION - baseline_clock.getTime())
         instruction_text.draw()
         countdown_text.text = f"{remaining}s"
+        win.flip()
         countdown_text.draw()
         win.flip()
         
@@ -294,9 +286,9 @@ def run_neurofeedback_experiment(neurofeedback_processor):
         marker_val = marker_map[limb]
         win.callOnFlip(lambda m=marker_val: marker_outlet.push_sample([m]))
         win.flip()
-        # Brief delay to allow LSL to transmit marker (10ms typical for LSL transport)
-        time.sleep(0.01)
-        logging.debug(f"Sent START marker: {marker_val} for {limb}")
+        # Delay to allow LSL to transmit marker (50ms ensures network transport)
+        time.sleep(0.05)
+        logging.info(f"Sent START marker: {marker_val} for {limb}")
         
         # Start real-time processing after the START cue
         neurofeedback_processor.start_processing()
@@ -373,9 +365,9 @@ def run_neurofeedback_experiment(neurofeedback_processor):
         channel_text.draw()
         win.callOnFlip(lambda s=MARKER_STOP: marker_outlet.push_sample([s]))
         win.flip()
-        # Brief delay to allow LSL to transmit marker (10ms typical for LSL transport)
-        time.sleep(0.01)
-        logging.debug(f"Sent STOP marker")
+        # Delay to allow LSL to transmit marker (50ms ensures network transport)
+        time.sleep(0.05)
+        logging.info(f"Sent STOP marker")
         core.wait(1.0)
         
         # Inter-trial interval
