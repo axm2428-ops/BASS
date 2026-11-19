@@ -1,294 +1,78 @@
 """
-Motor Imagery Neurofeedback Experiment - Main Data Collection Script
+config.py - Centralized configuration parameters for the MI Neurofeedback system
 
-IMPORTANT: This script requires an EEG data source (OpenBCI or synthetic).
-Before running this script:
-  1. Start your EEG data source (BrainVision/OpenBCI)
-  2. OR run test_lsl_connections.py to verify connections
-
-To test if marker collection is working:
-  python test_marker_fix.py
-
-See MARKER_FIX_SUMMARY.md for details on the marker collection fix.
+This file contains all configuration constants used throughout the MI Neurofeedback system.
+All modules should import parameters from this file to ensure consistency.
 """
-import threading
-import time
-import random
-import csv
+# Windows
+#[Environment]::SetEnvironmentVariable("NEUROFEEDBACK_DATA_DIR", "G:\Shared drives\NeurEx\Team_Folders\BASS\Raw data", "User")
+# IF YOU HAVE MAC
+#export NEUROFEEDBACK_DATA_DIR="/actual/path/to/Raw data"--change to your path and run in terminal 
+# Verify Path:
+#   python -c "import config; print(config.RAW_DATA_DIR)"
 import os
-import sys
-from collections import deque
-from datetime import datetime
-import numpy as np
-import logging
-import argparse
-import uuid
-from scipy.signal import butter, filtfilt
-import sys
-import config
-
-
-sys.path.insert(0, '.')
 
 
 
-# Import from current directory
-from calculate_band_power import calculate_band_power
-from fft_power_update import fft_power_update
-from bandpass_filter import bandpass_filter
-#import neurofeedback processor
-from NeurofeedbackProcessor import NeurofeedbackProcessor
-from run_neurofeedback_experiment import run_neurofeedback_experiment
-# Import lsl data collector class
-from LSLDataCollector import LSLDataCollector
+# --- Configuration Parameters ---
+EEG_STREAM_NAME = "OpenBCI_EEG"
+MARKER_STREAM_NAME = "MI_MarkerStream"
 
+SAMPLE_RATE = 250  # Hz
+EEG_CHANNELS = ["CH1", "CH2", "CH3", "CH4", "CH5", "CH6", "CH7", "CH8"]
+CSV_EEG_CHANNEL_INDICES = (2, 5)
+CSV_EEG_CHANNELS = [EEG_CHANNELS[index] for index in CSV_EEG_CHANNEL_INDICES]
 
+# Motor Imagery Experiment Parameters
+NUM_TRIALS = 30  # Configurable number of trials
+INSTRUCTION_DURATION = 2.0  # seconds to show left/right instruction
+IMAGERY_DURATION = 5.0  # seconds for motor imagery
+INTER_TRIAL_INTERVAL = 3.0  # seconds between trials
+NO_MOVEMENT_PROBABILITY = 0.1  # Probability of a no-movement trial occurring
 
-# Configure logging: timestamped, INFO level
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
+# Marker values
+MARKER_RIGHT = "1"  # right hand imagery
+MARKER_LEFT = "2"   # left hand imagery
+MARKER_FEET = "3"   # feet imagery
+MARKER_STOP = "END"   # end of imagery period
+MARKER_NO_MOVEMENT = "rest"  # no movement/rest trials
+
+# Allow each computer to point recordings at its local sync of the shared folder.
+RAW_DATA_DIR = os.environ.get("NEUROFEEDBACK_DATA_DIR") or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "data", "raw"
 )
+RAW_DATA_DIR = os.path.abspath(os.path.expandvars(os.path.expanduser(RAW_DATA_DIR)))
+os.makedirs(RAW_DATA_DIR, exist_ok=True)
 
+# Data collection parameters
+MERGE_THRESHOLD = 0.002  # seconds threshold for aligning EEG and marker timestamps
+POLL_SLEEP = 0.001      # sleep time between polls in collector loop
 
-from config import (
-    EEG_STREAM_NAME,
-    MARKER_STREAM_NAME,
-    SAMPLE_RATE,
-    EEG_CHANNELS,
-    CSV_EEG_CHANNELS,
-    EEG_STREAM_NAME,
-    MARKER_STREAM_NAME,
-    NUM_TRIALS,
-    INSTRUCTION_DURATION,
-    IMAGERY_DURATION,
-    INTER_TRIAL_INTERVAL,
-    NO_MOVEMENT_PROBABILITY,
-    MARKER_RIGHT,
-    MARKER_LEFT,
-    MARKER_FEET,
-    MARKER_STOP,
-    MARKER_NO_MOVEMENT,
-    RAW_DATA_DIR,
-    MERGE_THRESHOLD,
-    POLL_SLEEP,
-    MU_BAND,
-    BETA_BAND,
-    WINDOW_LENGTH,
-    WINDOW_OVERLAP,
-    WINDOW_SHIFT,
-    BASELINE_START,
-    BASELINE_END,
-    INITIAL_BASELINE_DURATION,
-    BASELINE_WEIGHT_INITIAL,
-    BASELINE_WEIGHT_TRIAL,
-    DISPLAY_REFRESH_RATE,
-    DISPLAY_UPDATE_INTERVAL,
-    FEEDBACK_BAR_MAX_WIDTH,
-    SMOOTHING_FACTOR,
-    ERD_EMPHASIS_FACTOR,
-    USE_FFT_BUFFER,
-    ADAPTIVE_ERD_SCALING,
-    MAX_INITIAL_ERD,
-    ERD_SCALING_FACTOR,
-    FILTER_ORDER,
-    FILTER_BAND
-)
+# Neurofeedback Parameters
+MU_BAND = (8, 12)       # Mu frequency band (Hz)
+BETA_BAND = (13, 30)    # Beta frequency band (Hz)
+WINDOW_LENGTH = 1.0     # Window length for bandpower calculation (seconds)
+WINDOW_OVERLAP = 0.95   # Window overlap (seconds)
+WINDOW_SHIFT = 0.05     # Window shift (seconds)
+BASELINE_START = -3.0   # Start time for baseline period (seconds relative to imagery start)
+BASELINE_END = -1.0     # End time for baseline period (seconds relative to imagery start)
+INITIAL_BASELINE_DURATION = 10.0  # Duration of initial baseline period in seconds
+BASELINE_WEIGHT_INITIAL = 0.7     # Weight for initial baseline (0-1)
+BASELINE_WEIGHT_TRIAL = 0.3       # Weight for per-trial baseline (0-1)
+DISPLAY_REFRESH_RATE = 60  # Hz, target refresh rate for display updates
+DISPLAY_UPDATE_INTERVAL = 1.0/DISPLAY_REFRESH_RATE  # seconds between display updates
+FEEDBACK_BAR_MAX_WIDTH = 1.2  # Maximum width of the feedback bar (normalized units)
 
-# Optional BIDS settings — fall back to sensible defaults if not present in config
-try:
-    from config import SUBJECT_ID, SESSION_ID, TASK_NAME, RUN_ID, BIDS_ROOT
-except Exception:
-    SUBJECT_ID = "sub-01"
-    SESSION_ID = "ses-01"
-    TASK_NAME = "mi"
-    RUN_ID = "run-01"
-    BIDS_ROOT = "bids_dataset"
+# Visual feedback parameters
+SMOOTHING_FACTOR = 0.8  # Weight given to previous value (0-1) for smooth transitions
+ERD_EMPHASIS_FACTOR = 1.5  # Emphasis factor for larger desynchronizations
 
+# Real-time processing optimization
+USE_FFT_BUFFER = True   # Use rolling FFT update instead of recomputing full FFT
+ADAPTIVE_ERD_SCALING = True  # Adapt ERD scaling based on subject performance
+MAX_INITIAL_ERD = 50    # Initial maximum expected ERD value (%)
+ERD_SCALING_FACTOR = 1.2  # Factor for adjusting max ERD based on performance
 
-###############################################################################
-#                             BIDS CONVERSION
-###############################################################################
-def convert_to_bids(csv_path):
-    """
-    This function is given to you.
-    It converts the CSV data to BIDS (Brain Imaging Data Structure) format.
-    """
-    logging.info(f"Converting {csv_path} to BIDS...")
-    import pandas as pd
-    try:
-        df = pd.read_csv(csv_path)
-    except Exception as e:
-        logging.exception("Failed to read CSV file for BIDS conversion:")
-        return
-
-    # Verify that expected EEG channel columns exist
-    missing_cols = [ch for ch in CSV_EEG_CHANNELS if ch not in df.columns]
-    if missing_cols:
-        logging.error(f"CSV is missing expected EEG channels: {missing_cols}")
-        return
-
-    # Extract EEG data
-    data_eeg = []
-    for ch in CSV_EEG_CHANNELS:
-        col_data = pd.to_numeric(df[ch], errors="coerce").fillna(0).values
-        data_eeg.append(col_data)
-    data_eeg = np.array(data_eeg)  # shape: (n_channels, n_samples)
-
-    # Process markers and trial_id
-    raw_markers = df["marker"].astype(str).replace({"nan": "", "None": ""}).values
-    trial_ids = df["trial_id"].astype(str).values if "trial_id" in df.columns else ["0"] * len(df)
-    markers = []
-    for i, (m, t) in enumerate(zip(raw_markers, trial_ids)):
-        if m != "":
-            markers.append((i, m, t))
-
-    from mne import create_info
-    from mne.io import RawArray
-    info = create_info(ch_names=CSV_EEG_CHANNELS, sfreq=SAMPLE_RATE, ch_types="eeg")
-    raw = RawArray(data_eeg, info)
-
-    # Create annotations from markers with trial_id
-    annotations_onset = []
-    annotations_desc  = []
-    for (idx, marker_val, trial_id) in markers:
-        onset_sec = idx / SAMPLE_RATE  # Alternatively, use LSL timestamps if available
-        annotations_onset.append(onset_sec)
-        annotations_desc.append(f"Marker/{marker_val}/trial_{trial_id}")
-
-    import mne
-    raw.set_annotations(mne.Annotations(
-        onset=annotations_onset,
-        duration=[0.0]*len(annotations_onset),
-        description=annotations_desc
-    ))
-
-    from mne_bids import write_raw_bids, BIDSPath
-    bids_path = BIDSPath(
-        root= BIDS_ROOT,
-        subject=SUBJECT_ID.replace("sub-", ""),
-        session=SESSION_ID.replace("ses-", ""),
-        task=TASK_NAME.replace("task-", ""),
-        run=RUN_ID.replace("run-", ""),
-        datatype="eeg"
-    )
-    try:
-        write_raw_bids(
-            raw,
-            bids_path,
-            overwrite=True,
-            allow_preload=True,
-            format='BrainVision'
-        )
-        logging.info(f"BIDS dataset written at: {bids_path.directory}")
-    except Exception as e:
-        logging.exception("Error during BIDS conversion:")
-
-def main():
-
-
-    logging.info("="*70)
-    logging.info("Starting Motor Imagery Neurofeedback Experiment")
-    logging.info("="*70)
-
-    #import neurofeedback processor
-    neurofeedback_processor = NeurofeedbackProcessor()
-
-    # Create marker stream BEFORE starting collector to avoid race condition
-    from pylsl import StreamInfo, StreamOutlet
-    try:
-        marker_source_id = f"mi-marker-{uuid.uuid4().hex}"
-        marker_info = StreamInfo(
-            MARKER_STREAM_NAME, "Markers", 1, 0, "string", marker_source_id
-        )
-        marker_outlet = StreamOutlet(marker_info)
-        logging.info(f"✓ Marker stream created: '{MARKER_STREAM_NAME}'")
-        # Brief delay to let marker stream stabilize on the network
-        time.sleep(2.0)
-        logging.info("✓ Marker stream stable and ready")
-    except Exception as e:
-        logging.exception("Failed to create LSL Marker stream:")
-        raise
-
-    #start data collector
-    stop_event = threading.Event()
-    collector = LSLDataCollector(
-        stop_event, neurofeedback_processor, marker_source_id=marker_source_id
-    )
-    collector.start()
-    
-    # Wait for collector to be ready (streams resolved)
-    if not collector.ready_event.wait(timeout=15):
-        raise RuntimeError("Timed out waiting for LSL collector to resolve streams")
-    if collector.startup_error is not None:
-        raise RuntimeError("LSL collector failed to start") from collector.startup_error
-    logging.info("✓ Data collector ready and connected")
-
-   # run experiment
-    run_neurofeedback_experiment(neurofeedback_processor, marker_outlet)
-
-
-    logging.info("Experiment complete. Stopping data collector thread...")
-    stop_event.set()
-    collector.join(timeout=2.0)  # Wait max 2 seconds for clean shutdown
-
-    logging.info("All processes complete. Exiting script.")
-
-
-
-
-
-    
-    #try:
-        # Start the data collector thread
-       # logging.info("Starting LSL data collector thread...")
-      #  collector.start()
-       # logging.info("✓ Data collector started")
-
-        
-        
-        # Wait until the collector has resolved both EEG and marker streams.
-        #if not collector.ready_event.wait(timeout=15):
-            #raise RuntimeError("Timed out waiting for the LSL collector to become ready")
-       # if collector.startup_error is not None:
-           # raise RuntimeError("LSL collector failed to start") from collector.startup_error
-        
-        # Run using the same marker outlet created above.
-        #logging.info("Launching neurofeedback experiment...")
-        #run_neurofeedback_experiment(neurofeedback_processor, marker_outlet)
-       # logging.info("✓ Experiment completed successfully")
-        
-    # except KeyboardInterrupt:
-       # logging.info("KeyboardInterrupt received during experiment. Stopping...")
-       # stop_event.set()
-    #exit_code = 130
-    #except Exception as e:
-       # logging.exception("Experiment error - details above:")
-       # stop_event.set()
-       # exit_code = 1
-    #finally:
-        # ensure collector stops and join with a timeout
-        #logging.info("Shutting down data collector...")
-        #stop_event.set()
-        #collector.join(timeout=5.0)
-        #if collector.is_alive():
-            #logging.warning("Collector thread failed to stop within 5s - may lose final data")
-        
-        # Convert to BIDS if we have an output
-        #logging.info(f"Attempting BIDS conversion for {collector.output_csv}...")
-        #try:
-         #   convert_to_bids(collector.output_csv)
-       # except Exception:
-        #    logging.exception("BIDS conversion failed")
-        
-        #logging.info("="*70)
-        #logging.info("Motor imagery experiment finished with LSL data.")
-        #logging.info(f"Data saved to: {collector.output_csv}")
-       # logging.info("="*70)
-
-    #if exit_code != 0:
-        #raise SystemExit(exit_code)
-
-if __name__ == "__main__":
-    main()
+# Bandpass filter parameters for preprocessing
+FILTER_ORDER = 4
+FILTER_BAND = (1, 45)   # Hz 
